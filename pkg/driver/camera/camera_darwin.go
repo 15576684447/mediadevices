@@ -47,6 +47,7 @@ func (cam *camera) Close() error {
 }
 
 func (cam *camera) VideoRecord(property prop.Media) (video.Reader, error) {
+	//获得视频解码器
 	decoder, err := frame.NewDecoder(property.FrameFormat)
 	if err != nil {
 		return nil, err

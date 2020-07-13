@@ -48,7 +48,7 @@ func newTrack(opts *MediaDevicesOptions, d driver.Driver, constraints MediaTrack
 	var rtpCodecs []*webrtc.RTPCodec
 	var buildSampler func(t LocalTrack) samplerFunc
 	var err error
-
+	//打开设备
 	err = d.Open()
 	if err != nil {
 		return nil, err
@@ -57,13 +57,18 @@ func newTrack(opts *MediaDevicesOptions, d driver.Driver, constraints MediaTrack
 	switch r := d.(type) {
 	case driver.VideoRecorder:
 		rtpCodecs = opts.codecs[webrtc.RTPCodecTypeVideo]
+		//指定视频取样器，将编码后的视频分包为若干个pkt
 		buildSampler = newVideoSampler
+		//从视频设备获取数据并编码
 		encoderBuilders, err = newVideoEncoderBuilders(r, constraints)
 	case driver.AudioRecorder:
 		rtpCodecs = opts.codecs[webrtc.RTPCodecTypeAudio]
+		//指定音频取样器，将编码后的音频分包为若干个pkt
 		buildSampler = func(t LocalTrack) samplerFunc {
+			//分包并发送track
 			return newAudioSampler(t, constraints.selectedMedia.Latency)
 		}
+		//从音频设备获取数据并编码
 		encoderBuilders, err = newAudioEncoderBuilders(r, constraints)
 	default:
 		err = errors.New("newTrack: invalid driver type")
@@ -76,6 +81,7 @@ func newTrack(opts *MediaDevicesOptions, d driver.Driver, constraints MediaTrack
 
 	for _, builder := range encoderBuilders {
 		var matchedRTPCodec *webrtc.RTPCodec
+		//获取rtpCodecs中指定编码类型的可用builder
 		for _, rtpCodec := range rtpCodecs {
 			if rtpCodec.Name == builder.name {
 				matchedRTPCodec = rtpCodec
@@ -86,7 +92,7 @@ func newTrack(opts *MediaDevicesOptions, d driver.Driver, constraints MediaTrack
 		if matchedRTPCodec == nil {
 			continue
 		}
-
+		//生成一个track
 		localTrack, err := opts.trackGenerator(
 			matchedRTPCodec.PayloadType,
 			rand.Uint32(),
@@ -97,18 +103,19 @@ func newTrack(opts *MediaDevicesOptions, d driver.Driver, constraints MediaTrack
 		if err != nil {
 			continue
 		}
-
+		//获取对应codec的builder
 		encoder, err := builder.build()
 		if err != nil {
 			continue
 		}
-
+		//指定track、编码器以及取样分包器
 		t := track{
 			localTrack: localTrack,
 			sample:     buildSampler(localTrack),
 			d:          d,
 			encoder:    encoder,
 		}
+		//encoder获取音视频并编码，Sampler将编码后的音视频分包为若干个pkt并传输
 		go t.start()
 		return &t, nil
 	}
@@ -153,6 +160,7 @@ func (t *track) start() {
 	var err error
 	buff := make([]byte, 1024)
 	for {
+		//encoder读取音视频
 		n, err = t.encoder.Read(buff)
 		if err != nil {
 			if e, ok := err.(*mio.InsufficientBufferError); ok {
@@ -163,7 +171,7 @@ func (t *track) start() {
 			t.onError(err)
 			return
 		}
-
+		//取样分包
 		if err := t.sample(buff[:n]); err != nil {
 			t.onError(err)
 			return

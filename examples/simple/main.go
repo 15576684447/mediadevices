@@ -74,7 +74,7 @@ func main() {
 		panic(err)
 	}
 	vp8Params.BitRate = 100000 // 100kbps
-
+	//定义Video和Audio 约束函数
 	s, err := md.GetUserMedia(mediadevices.MediaStreamConstraints{
 		Audio: func(c *mediadevices.MediaTrackConstraints) {
 			c.Enabled = true
@@ -98,6 +98,7 @@ func main() {
 			fmt.Printf("Track (ID: %s, Label: %s) ended with error: %v\n",
 				t.ID(), t.Label(), err)
 		})
+		//增加各个track到pc
 		_, err = peerConnection.AddTransceiverFromTrack(t,
 			webrtc.RtpTransceiverInit{
 				Direction: webrtc.RTPTransceiverDirectionSendonly,

@@ -126,6 +126,7 @@ func (m *mediaDevices) GetUserMedia(constraints MediaStreamConstraints) (MediaSt
 	}
 
 	var videoConstraints, audioConstraints MediaTrackConstraints
+	//使用Video/Audio约束函数给MediaTrackConstraints赋值参数
 	if constraints.Video != nil {
 		constraints.Video(&videoConstraints)
 	}
@@ -153,7 +154,7 @@ func (m *mediaDevices) GetUserMedia(constraints MediaStreamConstraints) (MediaSt
 
 		trackers = append(trackers, tracker)
 	}
-
+	//一个MediaStream由多个track组成
 	s, err := NewMediaStream(trackers...)
 	if err != nil {
 		cleanTrackers()
