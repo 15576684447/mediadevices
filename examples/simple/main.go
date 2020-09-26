@@ -1,7 +1,10 @@
 package main
 
 import (
+	"encoding/json"
+	"flag"
 	"fmt"
+	"net/http"
 
 	"github.com/pion/mediadevices"
 	"github.com/pion/mediadevices/examples/internal/signal"
@@ -32,6 +35,8 @@ const (
 )
 
 func main() {
+	addr := flag.String("address", ":50000", "Address to host the HTTP server on.")
+	flag.Parse()
 	config := webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
 			{
@@ -40,9 +45,13 @@ func main() {
 		},
 	}
 
-	// Wait for the offer to be pasted
-	offer := webrtc.SessionDescription{}
-	signal.Decode(signal.MustReadStdin(), &offer)
+
+	// Exchange the offer/answer via HTTP
+	offerChan, answerChan := mustSignalViaHTTP(*addr)
+	// Wait for the remote SessionDescription
+	offer := <-offerChan
+	fmt.Printf("pub receive offer: %+v\n", offer)
+
 
 	// Create a new RTCPeerConnection
 	mediaEngine := webrtc.MediaEngine{}
@@ -121,6 +130,8 @@ func main() {
 		panic(err)
 	}
 
+	answerChan <- answer
+
 	// Sets the LocalDescription, and starts our UDP listeners
 	err = peerConnection.SetLocalDescription(answer)
 	if err != nil {
@@ -130,4 +141,49 @@ func main() {
 	// Output the answer in base64 so we can paste it in browser
 	fmt.Println(signal.Encode(answer))
 	select {}
+}
+
+
+// mustSignalViaHTTP exchange the SDP offer and answer using an HTTP server.
+func mustSignalViaHTTP(address string) (chan webrtc.SessionDescription, chan webrtc.SessionDescription) {
+	offerOut := make(chan webrtc.SessionDescription)
+	answerIn := make(chan webrtc.SessionDescription)
+
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Body == nil {
+			http.Error(w, "Please send a request body", 400)
+			return
+		}
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", http.MethodPost)
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "Please send a "+http.MethodPost+" request", 400)
+			return
+		}
+
+		var offer webrtc.SessionDescription
+		err := json.NewDecoder(r.Body).Decode(&offer)
+		if err != nil {
+			panic(err)
+		}
+
+		offerOut <- offer
+		answer := <-answerIn
+
+		err = json.NewEncoder(w).Encode(answer)
+		if err != nil {
+			panic(err)
+		}
+	})
+
+	go func() {
+		panic(http.ListenAndServe(address, nil))
+	}()
+	fmt.Println("Listening on", address)
+
+	return offerOut, answerIn
 }
