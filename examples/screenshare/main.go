@@ -1,7 +1,9 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"github.com/pion/mediadevices/pkg/log"
 
 	"github.com/pion/mediadevices"
 	"github.com/pion/mediadevices/examples/internal/signal"
@@ -13,6 +15,8 @@ import (
 )
 
 func main() {
+	addr := flag.String("address", ":50000", "Address to host the HTTP server on.")
+	flag.Parse()
 	config := webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
 			{
@@ -21,16 +25,21 @@ func main() {
 		},
 	}
 
-	// Wait for the offer to be pasted
-	offer := webrtc.SessionDescription{}
-	signal.Decode(signal.MustReadStdin(), &offer)
+
+	// Exchange the offer/answer via HTTP
+	offerChan, answerChan := signal.MustSignalViaHTTP(*addr)
+	// Wait for the remote SessionDescription
+	offer := <-offerChan
+	fmt.Printf("pub receive offer: %+v\n", offer)
 
 	// Create a new RTCPeerConnection
 	mediaEngine := webrtc.MediaEngine{}
 	if err := mediaEngine.PopulateFromSDP(offer); err != nil {
 		panic(err)
 	}
-	api := webrtc.NewAPI(webrtc.WithMediaEngine(mediaEngine))
+	setttingEngine := webrtc.SettingEngine{}
+	setttingEngine.LoggerFactory = log.CustomLoggerFactory{}
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(mediaEngine), webrtc.WithSettingEngine(setttingEngine))
 	peerConnection, err := api.NewPeerConnection(config)
 	if err != nil {
 		panic(err)
@@ -88,6 +97,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	answerChan <- answer
 
 	// Sets the LocalDescription, and starts our UDP listeners
 	err = peerConnection.SetLocalDescription(answer)
